@@ -56,15 +56,15 @@ PRESET_MODE_TO_PRESET_INDEX = {
 
 # Hot Watter zone
 REMEHA_HW_MODE_TO_HVAC_MODE = {
-    "Manual": HVACMode.HEAT,
+    "ContinuousComfort": HVACMode.HEAT,
     "Scheduling": HVACMode.AUTO,
-    "FrostProtection": HVACMode.OFF,
+    "Off": HVACMode.OFF,
 }
 
 HVAC_MODE_TO_REMEHA_HW_MODE = {
     HVACMode.AUTO: "Scheduling",
-    HVACMode.HEAT: "Manual",
-    HVACMode.OFF: "FrostProtection",
+    HVACMode.HEAT: "ContinuousComfort",
+    HVACMode.OFF: "Off",
 }
 
 REMEHA_HW_STATUS_TO_HVAC_ACTION = {
