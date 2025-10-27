@@ -37,10 +37,14 @@ class RemehaHomeAPI:
         if not self._oauth_session.valid_token:
             await self._oauth_session.async_ensure_token_valid()
 
+        _LOGGER.debug("DONOTSEE: ", self._oauth_session.token['access_token'])
         return self._oauth_session.token["access_token"]
 
     async def _async_api_request(self, method: str, path: str, **kwargs):
         headers = kwargs.pop("headers", {})
+
+        _LOGGER.debug("DONOTSEE_HEADERS", headers)
+
         return await self._oauth_session.async_request(
             method,
             "https://api.bdrthermea.net/Mobile/api" + path,
