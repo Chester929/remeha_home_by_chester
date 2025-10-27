@@ -296,7 +296,10 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
     @property
     def _data(self) -> dict:
         """Return the climate zone information from the coordinator."""
-        return self.coordinator.get_by_id(self.hot_water_zone_id)
+
+        data = self.coordinator.get_by_id(self.hot_water_zone_id)
+        _LOGGER.debug("Loading DHW data", data)
+        return data
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -384,9 +387,8 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         self.async_write_ha_state()
 
         if hvac_mode == HVACMode.AUTO:
-            await self.api.async_set_schedule(
+            await self.api.async_hw_set_schedule(
                 self.hot_water_zone_id,
-                self._data["activeDwhTimeProgramNumber"],
             )
         elif hvac_mode == HVACMode.HEAT:
             await self.api.async_hw_set_continuous_comfort(self.hot_water_zone_id)
