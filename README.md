@@ -1,4 +1,4 @@
-# Remeha Home integration for Home Assistant
+# Remeha Home integration for Home Assistant (with dwh)
 This integration lets you control your Remeha Home thermostats from Home Assistant.
 
 **Before using this integration, make sure you have set up your thermostat in the [Remeha Home](https://play.google.com/store/apps/details?id=com.bdrthermea.application.remeha) app.**
