@@ -1,0 +1,14 @@
+{
+  "domain": "remeha_home_by_chester",
+  "name": "Remeha Home by Chester",
+  "codeowners": [
+    "@msvisser",
+    "@chester929"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/msvisser/remeha_home",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/msvisser/remeha_home/issues",
+  "version": "0.0.0"
+}
