@@ -372,6 +372,7 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
                  return
             elif self.hvac_mode == HVACMode.HEAT:
                 await self.api.async_hw_set_comfort_setpoint(self.hot_water_zone_id, temperature)
+                _LOGGER.debug("COMFORT_SETPOINT: ", temperature)
                 await self.api.async_hw_set_continuous_comfort(self.hot_water_zone_id)
             elif self.hvac_mode == HVACMode.OFF:
                 return
