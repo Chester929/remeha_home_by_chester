@@ -37,13 +37,13 @@ class RemehaHomeAPI:
         if not self._oauth_session.valid_token:
             await self._oauth_session.async_ensure_token_valid()
 
-        _LOGGER.debug("DONOTSEE: ", self._oauth_session.token['access_token'])
+        _LOGGER.debug("DONOTSEE: %s", self._oauth_session.token)
         return self._oauth_session.token["access_token"]
 
     async def _async_api_request(self, method: str, path: str, **kwargs):
         headers = kwargs.pop("headers", {})
 
-        _LOGGER.debug("DONOTSEE_HEADERS", **headers)
+        _LOGGER.debug("DONOTSEE_HEADERS: %s", headers)
 
         return await self._oauth_session.async_request(
             method,
@@ -359,6 +359,6 @@ class RemehaHomeOAuth2Implementation(AbstractOAuth2Implementation):
             response.raise_for_status()
             response_json = await response.json()
 
-            _LOGGER.debug("DONOTSEE_RSP_JSON: ", response_json)
+            _LOGGER.debug("DONOTSEE_RSP_JSON: %s", response_json)
 
         return response_json
