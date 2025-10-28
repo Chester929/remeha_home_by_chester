@@ -367,10 +367,10 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            _LOGGER.debug("Setting temperature to %f", temperature)
-            if self.hvac_mode == HVACMode.AUTO:
-                 return
-            elif self.hvac_mode == HVACMode.HEAT:
+            temperature = int(temperature) # dhw has only int numbers for temperature
+            _LOGGER.debug("Setting temperature to %f", float(temperature)) # but print in float
+
+            if self.hvac_mode == HVACMode.HEAT or self.hvac_mode == HVACMode.AUTO:
                 await self.api.async_hw_set_comfort_setpoint(self.hot_water_zone_id, temperature)
                 _LOGGER.debug("COMFORT_SETPOINT: ", temperature)
                 await self.api.async_hw_set_continuous_comfort(self.hot_water_zone_id)

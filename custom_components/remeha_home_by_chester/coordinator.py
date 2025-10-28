@@ -35,185 +35,211 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
         self.appliance_consumption_data = {}
         self.appliance_last_consumption_data_update = {}
 
+        self._lock = asyncio.Lock()
+        # Attributes for trigger control
+        self._block_until_time = None  # Timestamp (epoch seconds)
+
+    def trigger_update_block(self, duration_seconds=30):
+        """Trigger a block until a future timestamp."""
+        self._block_until_time = datetime.now().timestamp() + duration_seconds
+
     async def _async_update_data(self):
         """Fetch data from API endpoint.
 
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
-        try:
-            # Note: asyncio.TimeoutError and aiohttp.ClientError are already
-            # handled by the data update coordinator.
-            async with asyncio.timeout(30):
-                data = await self.api.async_get_dashboard()
-                _LOGGER.debug("Requested dashboard information: %s", data)
-        except ClientResponseError as err:
-            # Raising ConfigEntryAuthFailed will cancel future updates
-            # and start a config flow with SOURCE_REAUTH (async_step_reauth)
-            if err.status == 401:
-                raise ConfigEntryAuthFailed from err
 
-            raise UpdateFailed from err
+        now_ts = datetime.now().timestamp()
 
-        # Save the current time for appliance usage data updates
-        now = datetime.now()
+        # Check if within block period based on passed values
+        if self._block_until_time and now_ts < self._block_until_time:
+            # Optionally, you could return cache or skip fetch
+            # For your purpose, we just wait for remaining time, then fetch
+            remaining = self._block_until_time - now_ts
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+        async with self._lock:
+            # Double check if triggered during lock
+            now_ts = datetime.now().timestamp()
+            if self._block_until_time and now_ts < self._block_until_time:
+                remaining = self._block_until_time - now_ts
+                _LOGGER.warning("Unlocked process remaining %i seconds", int(remaining))
+                pass
 
-        for appliance in data["appliances"]:
-            appliance_id = appliance["applianceId"]
-            self.items[appliance_id] = appliance
+            try:
+                # Note: asyncio.TimeoutError and aiohttp.ClientError are already
+                # handled by the data update coordinator.
+                async with asyncio.timeout(30):
+                    data = await self.api.async_get_dashboard()
+                    _LOGGER.debug("Requested dashboard information: %s", data)
+            except ClientResponseError as err:
+                # Raising ConfigEntryAuthFailed will cancel future updates
+                # and start a config flow with SOURCE_REAUTH (async_step_reauth)
+                if err.status == 401:
+                    raise ConfigEntryAuthFailed from err
 
-            # Request appliance technical information the first time it is discovered
-            if appliance_id not in self.technical_info:
-                self.technical_info[appliance_id] = (
-                    await self.api.async_get_appliance_technical_information(
-                        appliance_id
-                    )
-                )
-                _LOGGER.debug(
-                    "Requested technical information for appliance %s: %s",
-                    appliance_id,
-                    self.technical_info[appliance_id],
-                )
+                raise UpdateFailed from err
 
-            # Only update appliance usage data every 15 minutes
-            if (appliance_id not in self.appliance_last_consumption_data_update) or (
-                now - self.appliance_last_consumption_data_update[appliance_id]
-                >= timedelta(minutes=14, seconds=45)
-            ):
-                try:
-                    consumption_data = (
-                        await self.api.async_get_consumption_data_for_today(
+            # Save the current time for appliance usage data updates
+            now = datetime.now()
+
+            for appliance in data["appliances"]:
+                appliance_id = appliance["applianceId"]
+                self.items[appliance_id] = appliance
+
+                # Request appliance technical information the first time it is discovered
+                if appliance_id not in self.technical_info:
+                    self.technical_info[appliance_id] = (
+                        await self.api.async_get_appliance_technical_information(
                             appliance_id
                         )
                     )
                     _LOGGER.debug(
-                        "Requested consumption data for appliance %s: %s",
+                        "Requested technical information for appliance %s: %s",
                         appliance_id,
-                        consumption_data,
+                        self.technical_info[appliance_id],
                     )
 
-                    if len(consumption_data["data"]) > 0:
-                        self.appliance_consumption_data[appliance_id] = (
-                            consumption_data["data"][0]
+                # Only update appliance usage data every 15 minutes
+                if (appliance_id not in self.appliance_last_consumption_data_update) or (
+                    now - self.appliance_last_consumption_data_update[appliance_id]
+                    >= timedelta(minutes=14, seconds=45)
+                ):
+                    try:
+                        consumption_data = (
+                            await self.api.async_get_consumption_data_for_today(
+                                appliance_id
+                            )
                         )
+                        _LOGGER.debug(
+                            "Requested consumption data for appliance %s: %s",
+                            appliance_id,
+                            consumption_data,
+                        )
+
+                        if len(consumption_data["data"]) > 0:
+                            self.appliance_consumption_data[appliance_id] = (
+                                consumption_data["data"][0]
+                            )
+                        else:
+                            _LOGGER.warning(
+                                "No consumption data found for appliance %s", appliance_id
+                            )
+                            self.appliance_consumption_data[appliance_id] = {
+                                "heatingEnergyConsumed": 0.0,
+                                "hotWaterEnergyConsumed": 0.0,
+                                "coolingEnergyConsumed": 0.0,
+                                "heatingEnergyDelivered": 0.0,
+                                "hotWaterEnergyDelivered": 0.0,
+                                "coolingEnergyDelivered": 0.0,
+                            }
+
+                        self.appliance_last_consumption_data_update[appliance_id] = now
+                    except ClientResponseError as err:
+                        _LOGGER.warning(
+                            "Failed to request consumption data for appliance %s: %s",
+                            appliance_id,
+                            err,
+                        )
+
+                # Get the cached consumption data for the appliance or use default values
+                if appliance_id in self.appliance_consumption_data:
+                    appliance["consumptionData"] = self.appliance_consumption_data[
+                        appliance_id
+                    ]
+                else:
+                    appliance["consumptionData"] = {
+                        "heatingEnergyConsumed": 0.0,
+                        "hotWaterEnergyConsumed": 0.0,
+                        "coolingEnergyConsumed": 0.0,
+                        "heatingEnergyDelivered": 0.0,
+                        "hotWaterEnergyDelivered": 0.0,
+                        "coolingEnergyDelivered": 0.0,
+                    }
+
+                self.device_info[appliance_id] = DeviceInfo(
+                    identifiers={(DOMAIN, appliance_id)},
+                    name=appliance["houseName"],
+                    manufacturer="Remeha",
+                    model=self.technical_info[appliance_id]["applianceName"],
+                )
+
+                for climate_zone in appliance["climateZones"]:
+                    climate_zone_id = climate_zone["climateZoneId"]
+                    # This assumes that all climate zones for an appliance share the same gateway
+                    gateways = self.technical_info[appliance_id][
+                        "internetConnectedGateways"
+                    ]
+
+                    if len(gateways) > 1:
+                        _LOGGER.warning(
+                            "Appliance %s has more than one gateway, using technical information from the first one",
+                            appliance_id,
+                        )
+
+                    if len(gateways) > 0:
+                        gateway_info = gateways[0]
                     else:
                         _LOGGER.warning(
-                            "No consumption data found for appliance %s", appliance_id
+                            "Appliance %s has no gateways, using unknown values",
+                            appliance_id,
                         )
-                        self.appliance_consumption_data[appliance_id] = {
-                            "heatingEnergyConsumed": 0.0,
-                            "hotWaterEnergyConsumed": 0.0,
-                            "coolingEnergyConsumed": 0.0,
-                            "heatingEnergyDelivered": 0.0,
-                            "hotWaterEnergyDelivered": 0.0,
-                            "coolingEnergyDelivered": 0.0,
+                        gateway_info = {
+                            "name": "Unknown",
+                            "hardwareVersion": "Unknown",
+                            "softwareVersion": "Unknown",
                         }
 
-                    self.appliance_last_consumption_data_update[appliance_id] = now
-                except ClientResponseError as err:
-                    _LOGGER.warning(
-                        "Failed to request consumption data for appliance %s: %s",
-                        appliance_id,
-                        err,
+                    self.items[climate_zone_id] = climate_zone
+                    self.device_info[climate_zone_id] = DeviceInfo(
+                        identifiers={(DOMAIN, climate_zone_id)},
+                        name=climate_zone["name"],
+                        manufacturer="Remeha",
+                        model=gateway_info["name"],
+                        hw_version=gateway_info["hardwareVersion"],
+                        sw_version=gateway_info["softwareVersion"],
+                        via_device=(DOMAIN, appliance_id),
                     )
 
-            # Get the cached consumption data for the appliance or use default values
-            if appliance_id in self.appliance_consumption_data:
-                appliance["consumptionData"] = self.appliance_consumption_data[
-                    appliance_id
-                ]
-            else:
-                appliance["consumptionData"] = {
-                    "heatingEnergyConsumed": 0.0,
-                    "hotWaterEnergyConsumed": 0.0,
-                    "coolingEnergyConsumed": 0.0,
-                    "heatingEnergyDelivered": 0.0,
-                    "hotWaterEnergyDelivered": 0.0,
-                    "coolingEnergyDelivered": 0.0,
-                }
+                for hot_water_zone in appliance["hotWaterZones"]:
+                    hot_water_zone_id = hot_water_zone["hotWaterZoneId"]
+                    # This assumes that all climate zones for an appliance share the same gateway
+                    gateways = self.technical_info[appliance_id][
+                        "internetConnectedGateways"
+                    ]
 
-            self.device_info[appliance_id] = DeviceInfo(
-                identifiers={(DOMAIN, appliance_id)},
-                name=appliance["houseName"],
-                manufacturer="Remeha",
-                model=self.technical_info[appliance_id]["applianceName"],
-            )
+                    if len(gateways) > 1:
+                        _LOGGER.warning(
+                            "Appliance %s has more than one gateway, using technical information from the first one",
+                            appliance_id,
+                        )
 
-            for climate_zone in appliance["climateZones"]:
-                climate_zone_id = climate_zone["climateZoneId"]
-                # This assumes that all climate zones for an appliance share the same gateway
-                gateways = self.technical_info[appliance_id][
-                    "internetConnectedGateways"
-                ]
+                    if len(gateways) > 0:
+                        gateway_info = gateways[0]
+                    else:
+                        _LOGGER.warning(
+                            "Appliance %s has no gateways, using unknown values",
+                            appliance_id,
+                        )
+                        gateway_info = {
+                            "name": "Unknown",
+                            "hardwareVersion": "Unknown",
+                            "softwareVersion": "Unknown",
+                        }
 
-                if len(gateways) > 1:
-                    _LOGGER.warning(
-                        "Appliance %s has more than one gateway, using technical information from the first one",
-                        appliance_id,
+                    self.items[hot_water_zone_id] = hot_water_zone
+                    self.device_info[hot_water_zone_id] = DeviceInfo(
+                        identifiers={(DOMAIN, hot_water_zone_id)},
+                        name=hot_water_zone["name"],
+                        manufacturer="Remeha",
+                        model=gateway_info["name"],
+                        hw_version=gateway_info["hardwareVersion"],
+                        sw_version=gateway_info["softwareVersion"],
+                        via_device=(DOMAIN, appliance_id),
                     )
 
-                if len(gateways) > 0:
-                    gateway_info = gateways[0]
-                else:
-                    _LOGGER.warning(
-                        "Appliance %s has no gateways, using unknown values",
-                        appliance_id,
-                    )
-                    gateway_info = {
-                        "name": "Unknown",
-                        "hardwareVersion": "Unknown",
-                        "softwareVersion": "Unknown",
-                    }
-
-                self.items[climate_zone_id] = climate_zone
-                self.device_info[climate_zone_id] = DeviceInfo(
-                    identifiers={(DOMAIN, climate_zone_id)},
-                    name=climate_zone["name"],
-                    manufacturer="Remeha",
-                    model=gateway_info["name"],
-                    hw_version=gateway_info["hardwareVersion"],
-                    sw_version=gateway_info["softwareVersion"],
-                    via_device=(DOMAIN, appliance_id),
-                )
-
-            for hot_water_zone in appliance["hotWaterZones"]:
-                hot_water_zone_id = hot_water_zone["hotWaterZoneId"]
-                # This assumes that all climate zones for an appliance share the same gateway
-                gateways = self.technical_info[appliance_id][
-                    "internetConnectedGateways"
-                ]
-
-                if len(gateways) > 1:
-                    _LOGGER.warning(
-                        "Appliance %s has more than one gateway, using technical information from the first one",
-                        appliance_id,
-                    )
-
-                if len(gateways) > 0:
-                    gateway_info = gateways[0]
-                else:
-                    _LOGGER.warning(
-                        "Appliance %s has no gateways, using unknown values",
-                        appliance_id,
-                    )
-                    gateway_info = {
-                        "name": "Unknown",
-                        "hardwareVersion": "Unknown",
-                        "softwareVersion": "Unknown",
-                    }
-
-                self.items[hot_water_zone_id] = hot_water_zone
-                self.device_info[hot_water_zone_id] = DeviceInfo(
-                    identifiers={(DOMAIN, hot_water_zone_id)},
-                    name=hot_water_zone["name"],
-                    manufacturer="Remeha",
-                    model=gateway_info["name"],
-                    hw_version=gateway_info["hardwareVersion"],
-                    sw_version=gateway_info["softwareVersion"],
-                    via_device=(DOMAIN, appliance_id),
-                )
-
-        return data
+            return data
 
     def get_by_id(self, item_id: str):
         """Return item with the specified item id."""
