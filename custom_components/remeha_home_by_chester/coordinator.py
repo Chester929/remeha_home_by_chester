@@ -41,7 +41,9 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
 
     def trigger_update_block(self, duration_seconds=30):
         """Trigger a block until a future timestamp."""
-        self._block_until_time = datetime.now().timestamp() + duration_seconds
+        block_until = datetime.now().timestamp() + duration_seconds
+        _LOGGER.debug("Update block triggered until: %s", block_until)
+        self._block_until_time = block_until
 
     async def _async_update_data(self):
         """Fetch data from API endpoint.
@@ -57,14 +59,16 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
             # Optionally, you could return cache or skip fetch
             # For your purpose, we just wait for remaining time, then fetch
             remaining = self._block_until_time - now_ts
+            _LOGGER.debug("Asyncio block seconds remaining: %i", remaining)
             if remaining > 0:
+                _LOGGER.debug("Asyncio sleep for: %i seconds", remaining)
                 await asyncio.sleep(remaining)
         async with self._lock:
             # Double check if triggered during lock
             now_ts = datetime.now().timestamp()
             if self._block_until_time and now_ts < self._block_until_time:
                 remaining = self._block_until_time - now_ts
-                _LOGGER.warning("Unlocked process remaining %i seconds", int(remaining))
+                _LOGGER.warning("Unlocked process with time remaining: %i seconds", int(remaining))
                 pass
 
             try:
