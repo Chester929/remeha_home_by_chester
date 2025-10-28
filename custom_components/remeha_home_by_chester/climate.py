@@ -154,6 +154,11 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         return self._data["setPoint"]
 
     @property
+    def target_temperature_step(self) -> float | None:
+        """Return the supported step of target temperature."""
+        return 0.5
+
+    @property
     def min_temp(self) -> float:
         """Return the minimum temperature."""
         return self._data["setPointMin"]
@@ -317,11 +322,16 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         return self._data["targetSetpoint"]
 
     @property
+    def target_temperature_step(self) -> float | None:
+        """Return the supported step of target temperature."""
+        if self.hvac_mode == HVACMode.AUTO:
+            return None
+        return 1.0
+
+    @property
     def min_temp(self) -> float:
         """Return the minimum temperature."""
-        if self.hvac_mode == HVACMode.AUTO:
-            return self._data['setPointRanges']['reducedSetpointMin']
-        return self._data["setPointMin"]
+        return self._data.get('setPointRanges', {}).get('reducedSetpointMin', 20.0)
 
     @property
     def max_temp(self) -> float:
