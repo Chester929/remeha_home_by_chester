@@ -314,13 +314,13 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
     @property
     def target_temperature(self) -> float | None:
         """Return the target temperature."""
-        if self.hvac_mode == HVACMode.OFF:
-            return None
         return self._data["targetSetpoint"]
 
     @property
     def min_temp(self) -> float:
         """Return the minimum temperature."""
+        if self.hvac_mode == HVACMode.AUTO:
+            return self._data['setPointRanges']['reducedSetpointMin']
         return self._data["setPointMin"]
 
     @property
@@ -376,6 +376,7 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
                 self.coordinator.trigger_update_block(60)
                 self._data['targetSetpoint'] = float(temperature)
                 self._data['dhwZoneMode'] = HVAC_MODE_TO_REMEHA_HW_MODE.get(HVACMode.HEAT)
+                self.async_write_ha_state()
             elif self.hvac_mode == HVACMode.OFF:
                 return
 
