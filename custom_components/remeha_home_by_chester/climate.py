@@ -319,6 +319,8 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
     @property
     def target_temperature(self) -> float | None:
         """Return the target temperature."""
+        if self.hvac_mode == HVACMode.AUTO or self.hvac_mode == HVACMode.OFF:
+            return None
         return self._data["targetSetpoint"]
 
     @property
@@ -377,7 +379,7 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            _LOGGER.debug("Setting temperature to %f", temperature) # print in float
+            _LOGGER.debug("Setting temperature toffff %f", temperature) # print in float
             temperature = int(temperature) # dhw has only int numbers for temperature
 
             if self.hvac_mode == HVACMode.HEAT or self.hvac_mode == HVACMode.AUTO:
