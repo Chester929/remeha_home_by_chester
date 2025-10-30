@@ -38,11 +38,14 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
         self._lock = asyncio.Lock()
         # Attributes for trigger control
         self._block_until_time = None  # Timestamp (epoch seconds)
+        self._data_cache = None
 
     def trigger_update_block(self, duration_seconds=30):
         """Trigger a block until a future timestamp."""
         block_until = datetime.now().timestamp() + duration_seconds
-        _LOGGER.debug("Update block triggered until: %s", block_until)
+        _LOGGER.debug(
+            "Update block triggered until: %s",
+            datetime.fromtimestamp(block_until).strftime("%Y-%m-%d %H:%M:%S"))
         self._block_until_time = block_until
 
     async def _async_update_data(self):
@@ -68,8 +71,14 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
             now_ts = datetime.now().timestamp()
             if self._block_until_time and now_ts < self._block_until_time:
                 remaining = self._block_until_time - now_ts
-                _LOGGER.warning("Unlocked process with time remaining: %i seconds", int(remaining))
-                pass
+                if self._data_cache is not None:
+                    _LOGGER.debug("Returning cached data [%i seconds remained]: %s",
+                                    remaining,
+                                    self._data_cache)
+                    return self._data_cache
+                else:
+                    _LOGGER.warning("Unlocked process with time remaining: %i seconds", int(remaining))
+                    pass
 
             try:
                 # Note: asyncio.TimeoutError and aiohttp.ClientError are already
@@ -242,7 +251,8 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                         sw_version=gateway_info["softwareVersion"],
                         via_device=(DOMAIN, appliance_id),
                     )
-
+            _LOGGER.debug("Updating data cache.")
+            self._data_cache = data
             return data
 
     def get_by_id(self, item_id: str):

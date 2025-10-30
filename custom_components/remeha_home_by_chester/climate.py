@@ -217,6 +217,7 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
             elif self.hvac_mode == HVACMode.OFF:
                 return
 
+            self.coordinator.trigger_update_block(60)
             await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -241,6 +242,7 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         else:
             raise NotImplementedError()
 
+        self.coordinator.trigger_update_block(60)
         await self.coordinator.async_request_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -266,6 +268,7 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         if previous_hvac_mode != HVACMode.AUTO:
             await self.api.async_set_schedule(self.climate_zone_id, target_preset)
 
+        self.coordinator.trigger_update_block(60)
         await self.coordinator.async_request_refresh()
 
 class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
@@ -303,7 +306,6 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         """Return the climate zone information from the coordinator."""
 
         data = self.coordinator.get_by_id(self.hot_water_zone_id)
-        _LOGGER.debug("Loading DHW data: %s", data)
         return data
 
     @property
@@ -379,7 +381,7 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            _LOGGER.debug("Setting temperature toffff %f", temperature) # print in float
+            _LOGGER.debug("Setting temperature to %f", temperature) # print in float
             temperature = int(temperature) # dhw has only int numbers for temperature
 
             if self.hvac_mode == HVACMode.HEAT or self.hvac_mode == HVACMode.AUTO:
