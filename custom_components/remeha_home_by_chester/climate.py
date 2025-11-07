@@ -3,7 +3,6 @@
 from __future__ import annotations
 from typing import Any
 import logging
-from utils import debounce_async
 
 from homeassistant.components.climate import (
     ClimateEntity,
@@ -129,7 +128,6 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         self.api = api
         self.coordinator = coordinator
         self.climate_zone_id = climate_zone_id
-        self._debounce_tasks = {}
 
         self._attr_unique_id = "_".join([DOMAIN, self.climate_zone_id])
 
@@ -206,7 +204,6 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         """Return the list of available presets."""
         return list(PRESET_INDEX_TO_PRESET_MODE.values())
 
-    @debounce_async(5)
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
@@ -223,7 +220,6 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
             self.coordinator.trigger_update_block(60)
             await self.coordinator.async_request_refresh()
 
-    @debounce_async(5)
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new operation mode."""
         _LOGGER.debug("Setting operation mode to %s", hvac_mode)
@@ -249,7 +245,6 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         self.coordinator.trigger_update_block(60)
         await self.coordinator.async_request_refresh()
 
-    @debounce_async(5)
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
         _LOGGER.debug("Setting preset mode to %s", preset_mode)
@@ -303,7 +298,6 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         self.api = api
         self.coordinator = coordinator
         self.hot_water_zone_id = hot_water_zone_id
-        self._debounce_tasks = {}
 
         self._attr_unique_id = "_".join([DOMAIN, self.hot_water_zone_id])
 
@@ -384,7 +378,6 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         """Return the list of available presets."""
         return list(PRESET_INDEX_TO_HW_PRESET_MODE.values())
 
-    @debounce_async(5)
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
@@ -403,7 +396,6 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
 
             await self.coordinator.async_request_refresh()
 
-    @debounce_async(5)
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new operation mode."""
         _LOGGER.debug("Setting operation mode to %s", hvac_mode)
@@ -428,7 +420,6 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         self.coordinator.trigger_update_block(60)
         await self.coordinator.async_request_refresh()
 
-    @debounce_async(5)
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
         _LOGGER.debug("Setting preset mode to %s", preset_mode)
