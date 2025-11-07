@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import RemehaHomeAPI
 from .const import DOMAIN
 from .coordinator import RemehaHomeUpdateCoordinator
+from .utils import debounce_async
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         self.api = api
         self.coordinator = coordinator
         self.climate_zone_id = climate_zone_id
+        self._debounce_tasks = {}
 
         self._attr_unique_id = "_".join([DOMAIN, self.climate_zone_id])
 
@@ -204,43 +206,55 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         """Return the list of available presets."""
         return list(PRESET_INDEX_TO_PRESET_MODE.values())
 
+    @debounce_async(5)
+    async def set_temperature(self, temperature: float):
+        _LOGGER.debug("API: Setting temperature to %f", temperature)
+        if self.hvac_mode == HVACMode.AUTO:
+            await self.api.async_set_temporary_override(self.climate_zone_id, temperature)
+        elif self.hvac_mode == HVACMode.HEAT:
+            await self.api.async_set_manual(self.climate_zone_id, temperature)
+
+    @debounce_async(5)
+    async def set_hvac_mode(self, hvac_mode: HVACMode):
+        _LOGGER.debug("API: Setting mode to %s", HVAC_MODE_TO_REMEHA_MODE.get(hvac_mode))
+        if hvac_mode == HVACMode.AUTO:
+            await self.api.async_set_schedule(self.climate_zone_id, self._data["activeHeatingClimateTimeProgramNumber"])
+        elif hvac_mode == HVACMode.HEAT:
+            await self.api.async_set_manual(self.climate_zone_id, self._data["setPoint"])
+        elif hvac_mode == HVACMode.OFF:
+            await self.api.async_set_off(self.climate_zone_id)
+
+    @debounce_async(5)
+    async def activate_heating_time_program(self, target_preset: int, previous_hvac_mode: HVACMode):
+        _LOGGER.debug("API: Setting heating time program to %i", target_preset)
+        await self.api.async_activate_heating_time_program(self.climate_zone_id, target_preset)
+        if previous_hvac_mode != HVACMode.AUTO():
+            await self.api.async_set_schedule(self.climate_zone_id, target_preset)
+
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
             _LOGGER.debug("Setting temperature to %f", temperature)
-            if self.hvac_mode == HVACMode.AUTO:
-                await self.api.async_set_temporary_override(
-                    self.climate_zone_id, temperature
-                )
-            elif self.hvac_mode == HVACMode.HEAT:
-                await self.api.async_set_manual(self.climate_zone_id, temperature)
-            elif self.hvac_mode == HVACMode.OFF:
+            if self.hvac_mode == HVACMode.OFF:
                 return
+
+            await self.set_temperature(temperature)
 
             self.coordinator.trigger_update_block(60)
             await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new operation mode."""
-        _LOGGER.debug("Setting operation mode to %s", hvac_mode)
+        _LOGGER.debug("Setting operation mode to %s", HVAC_MODE_TO_REMEHA_MODE.get(hvac_mode))
+
+        if hvac_mode not in self.hvac_modes:
+            raise NotImplementedError()
 
         # Temporarily override the coordinator state until the next poll
         self._data["zoneMode"] = HVAC_MODE_TO_REMEHA_MODE.get(hvac_mode)
         self.async_write_ha_state()
 
-        if hvac_mode == HVACMode.AUTO:
-            await self.api.async_set_schedule(
-                self.climate_zone_id,
-                self._data["activeHeatingClimateTimeProgramNumber"],
-            )
-        elif hvac_mode == HVACMode.HEAT:
-            await self.api.async_set_manual(
-                self.climate_zone_id, self._data["setPoint"]
-            )
-        elif hvac_mode == HVACMode.OFF:
-            await self.api.async_set_off(self.climate_zone_id)
-        else:
-            raise NotImplementedError()
+        await self.set_hvac_mode(hvac_mode)
 
         self.coordinator.trigger_update_block(60)
         await self.coordinator.async_request_refresh()
@@ -261,12 +275,7 @@ class RemehaHomeClimateEntity(CoordinatorEntity, ClimateEntity):
         self.async_write_ha_state()
 
         # Switch the selected heating time program
-        await self.api.async_activate_heating_time_program(
-            self.climate_zone_id, target_preset
-        )
-        # Automatically make sure the mode is set to schedule
-        if previous_hvac_mode != HVACMode.AUTO:
-            await self.api.async_set_schedule(self.climate_zone_id, target_preset)
+        await self.activate_heating_time_program(target_preset, previous_hvac_mode)
 
         self.coordinator.trigger_update_block(60)
         await self.coordinator.async_request_refresh()
@@ -298,6 +307,7 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         self.api = api
         self.coordinator = coordinator
         self.hot_water_zone_id = hot_water_zone_id
+        self._debounce_tasks = {}
 
         self._attr_unique_id = "_".join([DOMAIN, self.hot_water_zone_id])
 
@@ -378,43 +388,60 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
         """Return the list of available presets."""
         return list(PRESET_INDEX_TO_HW_PRESET_MODE.values())
 
+    @debounce_async(5)
+    async def set_continuous_comfort_with_temperature(self, temperature: float):
+        _LOGGER.debug("API: Setting temperature to %f", temperature)
+        await self.api.async_hw_set_comfort_setpoint(self.hot_water_zone_id, temperature)
+        await self.api.async_hw_set_continuous_comfort(self.hot_water_zone_id)
+
+    @debounce_async(5)
+    async def set_hvac_mode(self, hvac_mode: HVACMode):
+        _LOGGER.debug("API: Setting mode to %s", hvac_mode)
+        if hvac_mode == HVACMode.AUTO:
+            await self.api.async_hw_set_schedule(self.hot_water_zone_id)
+        elif hvac_mode == HVACMode.HEAT:
+            await self.api.async_hw_set_continuous_comfort(self.hot_water_zone_id)
+        elif hvac_mode == HVACMode.OFF:
+            await self.api.async_hw_set_off(self.hot_water_zone_id)
+
+    @debounce_async(5)
+    async def set_schedule(self):
+        _LOGGER.debug("API: Setting schedule")
+        await self.api.async_hw_set_schedule(self.hot_water_zone_id)
+
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            _LOGGER.debug("Setting temperature to %f", temperature) # print in float
+            _LOGGER.debug("Set temperature to %f", temperature) # print in float
             temperature = int(temperature) # dhw has only int numbers for temperature
 
-            if self.hvac_mode == HVACMode.HEAT or self.hvac_mode == HVACMode.AUTO:
-                await self.api.async_hw_set_comfort_setpoint(self.hot_water_zone_id, temperature)
-                await self.api.async_hw_set_continuous_comfort(self.hot_water_zone_id)
+            if self.hvac_mode == HVACMode.HEAT:
+                await self.set_continuous_comfort_with_temperature(temperature)
                 self.coordinator.trigger_update_block(60)
                 self._data['targetSetpoint'] = float(temperature)
                 self._data['dhwZoneMode'] = HVAC_MODE_TO_REMEHA_HW_MODE.get(HVACMode.HEAT)
                 self.async_write_ha_state()
-            elif self.hvac_mode == HVACMode.OFF:
+            else:
                 return
 
             await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new operation mode."""
-        _LOGGER.debug("Setting operation mode to %s", hvac_mode)
+        _LOGGER.debug("Setting operation mode to %s", HVAC_MODE_TO_REMEHA_HW_MODE.get(hvac_mode))
+
+        if hvac_mode not in self.hvac_modes:
+            raise NotImplementedError()
 
         # Temporarily override the coordinator state until the next poll
         self._data["dhwZoneMode"] = HVAC_MODE_TO_REMEHA_HW_MODE.get(hvac_mode)
 
-        if hvac_mode == HVACMode.AUTO:
-            await self.api.async_hw_set_schedule(
-                self.hot_water_zone_id,
-            )
-        elif hvac_mode == HVACMode.HEAT:
-            await self.api.async_hw_set_continuous_comfort(self.hot_water_zone_id)
+        if hvac_mode == HVACMode.HEAT:
             self._data['targetSetpoint'] = self._data['comfortSetPoint']
         elif hvac_mode == HVACMode.OFF:
-            await self.api.async_hw_set_off(self.hot_water_zone_id)
             self._data['targetSetpoint'] = 10.0
-        else:
-            raise NotImplementedError()
+
+        await self.set_hvac_mode(hvac_mode)
 
         self.async_write_ha_state()
         self.coordinator.trigger_update_block(60)
@@ -436,7 +463,7 @@ class RemehaHomeHotWaterEntity(CoordinatorEntity, ClimateEntity):
             self._data["dhwZoneMode"] = HVAC_MODE_TO_REMEHA_HW_MODE.get(HVACMode.AUTO)
             self._data["activeDwhTimeProgramNumber"] = target_preset
             self.async_write_ha_state()
-            await self.api.async_hw_set_schedule(self.hot_water_zone_id)
+            await self.set_schedule()
             self.coordinator.trigger_update_block(60)
 
         await self.coordinator.async_request_refresh()
