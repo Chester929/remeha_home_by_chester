@@ -131,23 +131,56 @@ class RemehaHomeUpdateCoordinator(DataUpdateCoordinator):
                             consumption_data,
                         )
 
-                        if len(consumption_data["data"]) > 0:
-                            self.appliance_consumption_data[appliance_id] = (
-                                consumption_data["data"][0]
-                            )
-                        else:
-                            _LOGGER.warning(
-                                "No consumption data found for appliance %s", appliance_id
-                            )
-                            self.appliance_consumption_data[appliance_id] = {
-                                "heatingEnergyConsumed": 0.0,
-                                "hotWaterEnergyConsumed": 0.0,
-                                "coolingEnergyConsumed": 0.0,
-                                "heatingEnergyDelivered": 0.0,
-                                "hotWaterEnergyDelivered": 0.0,
-                                "coolingEnergyDelivered": 0.0,
-                            }
+                        tmp_data = {
+                            "heatingEnergyConsumed": 0.0,
+                            "hotWaterEnergyConsumed": 0.0,
+                            "coolingEnergyConsumed": 0.0,
+                            "heatingEnergyDelivered": 0.0,
+                            "hotWaterEnergyDelivered": 0.0,
+                            "coolingEnergyDelivered": 0.0,
+                        }
 
+                        _LOGGER.debug(
+                            "set default tmp_data: %i : %s",
+                            len(consumption_data["data"]),
+                            tmp_data,
+                        )
+
+                        if len(consumption_data["data"]) > 0:
+                            _LOGGER.debug(
+                                "assigning consumption data %s",
+                                appliance_id
+                            )
+                            producers = consumption_data["data"][0].get("producerPerformanceStatistics", {}).get(
+                                "producers", [])
+
+                            _LOGGER.debug(
+                                "assigning counter consumption data %s: %s",
+                                appliance_id,
+                                producers,
+                            )
+
+                            for producer in producers:
+                                def get_energy_value(key):
+                                    val = producer.get(key)
+                                    return float(val) if val is not None and val != 'None' else 0.0
+
+                                tmp_data["heatingEnergyConsumed"] += get_energy_value("energyConsumptionCH")
+                                tmp_data["hotWaterEnergyConsumed"] += get_energy_value("energyConsumptionDHW")
+                                tmp_data["coolingEnergyConsumed"] += get_energy_value("energyConsumptionCooling")
+                                tmp_data["heatingEnergyDelivered"] += get_energy_value("energyProductionCH")
+                                tmp_data["hotWaterEnergyDelivered"] += get_energy_value("energyProductionDHW")
+                                tmp_data["coolingEnergyDelivered"] += get_energy_value("energyProductionCooling")
+                        else:
+                            _LOGGER.warning("No consumption data found for appliance %s", appliance_id)
+
+                        _LOGGER.debug(
+                            "assigning result consumption data %s: %s",
+                            appliance_id,
+                            tmp_data,
+                        )
+
+                        self.appliance_consumption_data[appliance_id] = tmp_data
                         self.appliance_last_consumption_data_update[appliance_id] = now
                     except ClientResponseError as err:
                         _LOGGER.warning(
